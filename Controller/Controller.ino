@@ -17,6 +17,14 @@ bool knightRiderDirection = true;
 int pulseValue = 0;
 bool pulseDirection = true;
 
+// Notification animation variables
+bool notificationActive = false;
+unsigned long notificationStartTime = 0;
+int notificationPhase = 0; // 0 = blink phase, 1 = wave phase
+int blinkCount = 0;
+int waveCount = 0;
+uint8_t waveColor1, waveColor2; // Random colors for waves
+
 // Keyboard effects variables
 struct KeyEffect {
   int position;
@@ -80,6 +88,17 @@ void setup() {
   Serial.println("Arduino LED Controller Ready - 60 LEDs");
 }
 
+void startNotification() {
+  notificationActive = true;
+  notificationStartTime = millis();
+  notificationPhase = 0;
+  blinkCount = 0;
+  waveCount = 0;
+  // Generate random colors for wave animation
+  waveColor1 = random(0, 255);
+  waveColor2 = random(0, 255);
+}
+
 void loop() {
   // Check for serial commands
   if (Serial.available() > 0) {
@@ -100,10 +119,12 @@ void loop() {
     else if (command == "NOTIFY") {
       currentState = NOTIFICATION_ALERT;
       stateChangeTime = millis();
+      startNotification(); // Initialize notification animation
     }
     else if (command == "IDLE") {
       currentState = IDLE_KNIGHT_RIDER;
       stateChangeTime = millis();
+      notificationActive = false; // Stop notification if active
     }
   }
   
@@ -114,9 +135,8 @@ void loop() {
     stateChangeTime = millis();
   }
   
-  // Auto return to idle after notification
-  if (currentState == NOTIFICATION_ALERT && 
-      millis() - stateChangeTime > 10000) { // 10 seconds
+  // Auto return to idle after notification completes
+  if (currentState == NOTIFICATION_ALERT && !notificationActive) {
     currentState = IDLE_KNIGHT_RIDER;
     stateChangeTime = millis();
   }
@@ -301,41 +321,79 @@ void updateRippleEffects() {
     }
   }
 }
+
 void notificationAlertAnimation() {
-  if (millis() - lastUpdate > 30) { // Fast update for smooth wave effect
-    // Clear LEDs
-    fill_solid(leds, NUM_LEDS, CRGB::Black);
-    
-    // Calculate wave position based on time
-    int waveSpeed = 2; // Controls how fast waves move
-    int waveWidth = 8; // Width of each wave
-    unsigned long time = millis();
-    int waveOffset = (time / 30) % (NUM_LEDS * 2); // Cycle through strip length
-    
-    // Create waves moving outward from center
-    int center = NUM_LEDS / 2;
-    for (int i = 0; i < NUM_LEDS; i++) {
-      int distFromCenter = abs(i - center);
-      int wavePos = (waveOffset + distFromCenter) % (NUM_LEDS * 2);
+  if (!notificationActive) return;
+  
+  unsigned long currentTime = millis();
+  unsigned long elapsedTime = currentTime - notificationStartTime;
+  
+  if (notificationPhase == 0) {
+    // Phase 1: Fast blinking (2 times)
+    if (millis() - lastUpdate > 100) { // Fast blink interval
+      if (blinkCount < 4) { // 4 state changes = 2 complete blinks (on-off-on-off)
+        if (blinkCount % 2 == 0) {
+          // Turn all LEDs on at full brightness
+          fill_solid(leds, NUM_LEDS, CRGB::White);
+        } else {
+          // Turn all LEDs off
+          fill_solid(leds, NUM_LEDS, CRGB::Black);
+        }
+        blinkCount++;
+        lastUpdate = millis();
+      } else {
+        // Move to wave phase
+        notificationPhase = 1;
+        notificationStartTime = millis(); // Reset timer for wave phase
+        blinkCount = 0;
+      }
+    }
+  } 
+  else if (notificationPhase == 1) {
+    // Phase 2: Wave animation (2 cycles with increased speed)
+    if (millis() - lastUpdate > 15) { // Faster update for increased speed
+      // Clear LEDs
+      fill_solid(leds, NUM_LEDS, CRGB::Black);
       
-      // Calculate brightness based on wave position
-      if (wavePos < waveWidth) {
-        int brightness = map(wavePos, 0, waveWidth, 255, 50);
+      // Calculate wave position based on time (increased speed)
+      int waveSpeed = 3; // Increased speed
+      int waveWidth = 8;
+      unsigned long time = elapsedTime;
+      int waveOffset = (time / 15) % (NUM_LEDS * 2); // Faster movement
+      
+      // Determine current wave cycle and color
+      int currentWaveCycle = (time / 1000) % 2; // Each wave lasts 1 second
+      uint8_t currentHue = (currentWaveCycle == 0) ? waveColor1 : waveColor2;
+      
+      // Create waves moving outward from center
+      int center = NUM_LEDS / 2;
+      for (int i = 0; i < NUM_LEDS; i++) {
+        int distFromCenter = abs(i - center);
+        int wavePos = (waveOffset + distFromCenter) % (NUM_LEDS * 2);
         
-        // Cycle through rainbow colors based on time
-        uint8_t hue = (time / 50) % 255; // Change color every 50ms
-        leds[i] = CHSV(hue, 255, brightness);
-        
-        // Add trailing effect
-        for (int trail = 1; trail <= 3; trail++) {
-          int trailPos = i + (i < center ? trail : -trail);
-          if (trailPos >= 0 && trailPos < NUM_LEDS) {
-            leds[trailPos] += CHSV(hue, 255, brightness / (trail + 1));
+        // Calculate brightness based on wave position
+        if (wavePos < waveWidth) {
+          int brightness = map(wavePos, 0, waveWidth, 255, 50);
+          leds[i] = CHSV(currentHue, 255, brightness);
+          
+          // Add trailing effect
+          for (int trail = 1; trail <= 3; trail++) {
+            int trailPos = i + (i < center ? trail : -trail);
+            if (trailPos >= 0 && trailPos < NUM_LEDS) {
+              leds[trailPos] += CHSV(currentHue, 255, brightness / (trail + 1));
+            }
           }
         }
       }
+      
+      lastUpdate = millis();
+      
+      // Check if 2 wave cycles are complete (2 seconds total)
+      if (elapsedTime > 2000) {
+        // End notification animation
+        notificationActive = false;
+        fill_solid(leds, NUM_LEDS, CRGB::Black); // Turn off all LEDs
+      }
     }
-    
-    lastUpdate = millis();
   }
 }

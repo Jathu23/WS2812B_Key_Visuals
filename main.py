@@ -29,7 +29,7 @@ class KeyboardMonitor:
     def __init__(self, led_controller):
         self.led_controller = led_controller
         self.last_key_time = 0
-        self.idle_threshold = 10  # seconds
+        self.idle_threshold = 5  # seconds
         self.is_monitoring = True
         
         # Start monitoring threads
@@ -83,7 +83,7 @@ class KeyboardMonitor:
         while self.is_monitoring:
             try:
                 # Example: Trigger notification every 30 seconds (for testing)
-                time.sleep(10)
+                time.sleep(5)
                 notification_count += 1
                 if notification_count % 2 == 0:  # Every minute
                     print(f"Sample notification #{notification_count//2}")

@@ -301,27 +301,40 @@ void updateRippleEffects() {
     }
   }
 }
-
 void notificationAlertAnimation() {
-  if (millis() - lastUpdate > 200) { // Pulse effect
-    // Pulse all LEDs
-    if (pulseDirection) {
-      pulseValue += 20;
-      if (pulseValue >= 255) {
-        pulseValue = 255;
-        pulseDirection = false;
-      }
-    } else {
-      pulseValue -= 20;
-      if (pulseValue <= 0) {
-        pulseValue = 0;
-        pulseDirection = true;
+  if (millis() - lastUpdate > 30) { // Fast update for smooth wave effect
+    // Clear LEDs
+    fill_solid(leds, NUM_LEDS, CRGB::Black);
+    
+    // Calculate wave position based on time
+    int waveSpeed = 2; // Controls how fast waves move
+    int waveWidth = 8; // Width of each wave
+    unsigned long time = millis();
+    int waveOffset = (time / 30) % (NUM_LEDS * 2); // Cycle through strip length
+    
+    // Create waves moving outward from center
+    int center = NUM_LEDS / 2;
+    for (int i = 0; i < NUM_LEDS; i++) {
+      int distFromCenter = abs(i - center);
+      int wavePos = (waveOffset + distFromCenter) % (NUM_LEDS * 2);
+      
+      // Calculate brightness based on wave position
+      if (wavePos < waveWidth) {
+        int brightness = map(wavePos, 0, waveWidth, 255, 50);
+        
+        // Cycle through rainbow colors based on time
+        uint8_t hue = (time / 50) % 255; // Change color every 50ms
+        leds[i] = CHSV(hue, 255, brightness);
+        
+        // Add trailing effect
+        for (int trail = 1; trail <= 3; trail++) {
+          int trailPos = i + (i < center ? trail : -trail);
+          if (trailPos >= 0 && trailPos < NUM_LEDS) {
+            leds[trailPos] += CHSV(hue, 255, brightness / (trail + 1));
+          }
+        }
       }
     }
-    
-    // Alternate between blue and orange
-    CRGB color = ((millis() / 500) % 2 == 0) ? CRGB(0, 0, pulseValue) : CRGB(pulseValue, pulseValue/2, 0);
-    fill_solid(leds, NUM_LEDS, color);
     
     lastUpdate = millis();
   }

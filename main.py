@@ -83,7 +83,7 @@ class KeyboardMonitor:
         while self.is_monitoring:
             try:
                 # Example: Trigger notification every 30 seconds (for testing)
-                time.sleep(30)
+                time.sleep(10)
                 notification_count += 1
                 if notification_count % 2 == 0:  # Every minute
                     print(f"Sample notification #{notification_count//2}")

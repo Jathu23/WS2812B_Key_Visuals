@@ -330,7 +330,7 @@ void notificationAlertAnimation() {
   
   if (notificationPhase == 0) {
     // Phase 1: Fast blinking (2 times)
-    if (millis() - lastUpdate > 100) { // Fast blink interval
+    if (currentTime - lastUpdate > 100) { // Fast blink interval
       if (blinkCount < 4) { // 4 state changes = 2 complete blinks (on-off-on-off)
         if (blinkCount % 2 == 0) {
           // Turn all LEDs on at full brightness
@@ -340,60 +340,66 @@ void notificationAlertAnimation() {
           fill_solid(leds, NUM_LEDS, CRGB::Black);
         }
         blinkCount++;
-        lastUpdate = millis();
+        lastUpdate = currentTime;
       } else {
         // Move to wave phase
         notificationPhase = 1;
-        notificationStartTime = millis(); // Reset timer for wave phase
-        blinkCount = 0;
+        notificationStartTime = currentTime; // Reset timer for wave phase
+        lastUpdate = currentTime;
+        waveCount = 0; // Reset wave count
       }
     }
   } 
   else if (notificationPhase == 1) {
-    // Phase 2: Wave animation (2 cycles with increased speed)
-    if (millis() - lastUpdate > 15) { // Faster update for increased speed
-      // Clear LEDs
-      fill_solid(leds, NUM_LEDS, CRGB::Black);
+    // Phase 2: Wave animation (2 cycles) - Fast consecutive waves
+    if (currentTime - lastUpdate > 15) { // Faster wave update interval
       
-      // Calculate wave position based on time (increased speed)
-      int waveSpeed = 3; // Increased speed
-      int waveWidth = 8;
-      unsigned long time = elapsedTime;
-      int waveOffset = (time / 15) % (NUM_LEDS * 2); // Faster movement
+      unsigned long waveElapsed = currentTime - notificationStartTime;
       
-      // Determine current wave cycle and color
-      int currentWaveCycle = (time / 1000) % 2; // Each wave lasts 1 second
-      uint8_t currentHue = (currentWaveCycle == 0) ? waveColor1 : waveColor2;
-      
-      // Create waves moving outward from center
-      int center = NUM_LEDS / 2;
-      for (int i = 0; i < NUM_LEDS; i++) {
-        int distFromCenter = abs(i - center);
-        int wavePos = (waveOffset + distFromCenter) % (NUM_LEDS * 2);
+      // Each complete wave cycle takes only 800ms (reduced from 1500ms)
+      if (waveCount < 2) {
+        // Clear LEDs
+        fill_solid(leds, NUM_LEDS, CRGB::Black);
         
-        // Calculate brightness based on wave position
-        if (wavePos < waveWidth) {
-          int brightness = map(wavePos, 0, waveWidth, 255, 50);
-          leds[i] = CHSV(currentHue, 255, brightness);
+        // Calculate wave position - faster wave movement
+        int waveOffset = (waveElapsed / 12) % (NUM_LEDS + 5); // Faster calculation
+        
+        // Select color based on current wave cycle
+        uint8_t currentHue = (waveCount == 0) ? waveColor1 : waveColor2;
+        
+        // Create waves moving outward from center
+        int center = NUM_LEDS / 2;
+        for (int i = 0; i < NUM_LEDS; i++) {
+          int distFromCenter = abs(i - center);
+          int wavePos = (waveOffset - distFromCenter + NUM_LEDS) % (NUM_LEDS + 5);
           
-          // Add trailing effect
-          for (int trail = 1; trail <= 3; trail++) {
-            int trailPos = i + (i < center ? trail : -trail);
-            if (trailPos >= 0 && trailPos < NUM_LEDS) {
-              leds[trailPos] += CHSV(currentHue, 255, brightness / (trail + 1));
+          // Calculate brightness based on wave position
+          if (wavePos < 6) { // Slightly smaller wave width for faster effect
+            int brightness = map(wavePos, 0, 5, 255, 60);
+            leds[i] = CHSV(currentHue, 255, brightness);
+            
+            // Add trailing effect
+            for (int trail = 1; trail <= 2; trail++) {
+              int trailPos = i + (i < center ? trail : -trail);
+              if (trailPos >= 0 && trailPos < NUM_LEDS) {
+                leds[trailPos] += CHSV(currentHue, 255, brightness / (trail + 2));
+              }
             }
+          }
+        }
+        
+        // Check if current wave cycle is complete - much faster cycles
+        if (waveElapsed > (waveCount + 1) * 800) { // Reduced from 1500ms to 800ms
+          waveCount++;
+          if (waveCount >= 2) {
+            // All waves complete
+            notificationActive = false;
+            fill_solid(leds, NUM_LEDS, CRGB::Black);
           }
         }
       }
       
-      lastUpdate = millis();
-      
-      // Check if 2 wave cycles are complete (2 seconds total)
-      if (elapsedTime > 2000) {
-        // End notification animation
-        notificationActive = false;
-        fill_solid(leds, NUM_LEDS, CRGB::Black); // Turn off all LEDs
-      }
+      lastUpdate = currentTime;
     }
   }
 }

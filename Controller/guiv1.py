@@ -25,6 +25,7 @@ class LEDControllerGUI:
         self.last_key_time = 0
         self.current_mode = "Disconnected"
         self.audio_monitoring = False
+        self.audio_thread = None  # Add audio thread variable
         
         # Custom effect variables
         self.custom_color = "#FF0000"
@@ -123,6 +124,12 @@ class LEDControllerGUI:
         self.brightness_scale.set(self.custom_brightness)
         self.brightness_scale.grid(row=0, column=5, padx=5, pady=5)
         
+        # Audio sensitivity control (new)
+        tk.Label(settings_frame, text="Audio Sensitivity:", bg='#2b2b2b', fg='white').grid(row=1, column=0, padx=5, pady=5)
+        self.audio_sensitivity = tk.Scale(settings_frame, from_=1, to=50, orient=tk.HORIZONTAL, bg='#2b2b2b', fg='white')
+        self.audio_sensitivity.set(10)
+        self.audio_sensitivity.grid(row=1, column=1, padx=5, pady=5)
+        
         # Control Frame
         control_frame = tk.LabelFrame(main_frame, text="Controls", bg='#2b2b2b', fg='white', font=('Arial', 12, 'bold'))
         control_frame.pack(fill=tk.X, pady=(0, 10))
@@ -130,6 +137,10 @@ class LEDControllerGUI:
         tk.Button(control_frame, text="Test Notification", command=self.test_notification, bg='#ff9800', fg='white').pack(side=tk.LEFT, padx=5, pady=5)
         tk.Button(control_frame, text="Test Key Press", command=self.test_key_press, bg='#9c27b0', fg='white').pack(side=tk.LEFT, padx=5, pady=5)
         tk.Button(control_frame, text="Turn Off LEDs", command=self.turn_off_leds, bg='#f44336', fg='white').pack(side=tk.LEFT, padx=5, pady=5)
+        
+        # Audio status indicator (new)
+        self.audio_status = tk.Label(control_frame, text="Audio: OFF", bg='#2b2b2b', fg='red', font=('Arial', 10, 'bold'))
+        self.audio_status.pack(side=tk.RIGHT, padx=10, pady=5)
         
         # Log Frame
         log_frame = tk.LabelFrame(main_frame, text="Activity Log", bg='#2b2b2b', fg='white', font=('Arial', 12, 'bold'))
@@ -186,6 +197,7 @@ class LEDControllerGUI:
     def disconnect_arduino(self):
         if self.arduino:
             self.stop_monitoring()
+            self.stop_audio_monitoring()  # Stop audio monitoring
             self.arduino.close()
             self.arduino = None
             self.status_label.config(text="Status: Disconnected", fg='red')
@@ -207,6 +219,7 @@ class LEDControllerGUI:
             return
             
         self.stop_monitoring()
+        self.stop_audio_monitoring()  # Stop audio monitoring when changing modes
         self.current_mode = mode
         
         mode_names = {
@@ -243,7 +256,6 @@ class LEDControllerGUI:
         
     def stop_monitoring(self):
         self.is_monitoring = False
-        self.audio_monitoring = False
         
         if self.keyboard_listener:
             self.keyboard_listener.stop()
@@ -253,6 +265,15 @@ class LEDControllerGUI:
             self.monitor_thread.join(timeout=1)
             
         self.log("Monitoring stopped")
+        
+    def stop_audio_monitoring(self):
+        """Stop audio monitoring thread and update status"""
+        self.audio_monitoring = False
+        if self.audio_thread and self.audio_thread.is_alive():
+            self.audio_thread.join(timeout=1)
+            self.audio_thread = None
+        self.audio_status.config(text="Audio: OFF", fg='red')
+        self.log("Audio monitoring stopped")
         
     def start_keyboard_listener(self):
         def on_key_press(key):
@@ -302,6 +323,7 @@ class LEDControllerGUI:
             return
             
         self.stop_monitoring()
+        self.stop_audio_monitoring()  # Stop any existing audio monitoring
         
         # Get current settings
         color = self.custom_color
@@ -322,28 +344,69 @@ class LEDControllerGUI:
             self.start_audio_monitoring()
             
     def start_audio_monitoring(self):
+        """Start audio monitoring in a separate thread"""
+        if self.audio_monitoring:
+            return
+            
         self.audio_monitoring = True
+        self.audio_thread = threading.Thread(target=self.audio_monitor_loop)
+        self.audio_thread.daemon = True
+        self.audio_thread.start()
         
-        def audio_callback(indata, frames, time, status):
-            if not self.audio_monitoring:
-                return
-                
-            # Simple audio analysis
-            audio_data = np.abs(indata[:, 0])
-            volume = np.mean(audio_data)
-            
-            # Convert to brightness value
-            brightness = int(min(255, volume * 10000))
-            
-            if brightness > 30:  # Threshold to avoid noise
-                self.send_command(f"AUDIO,{brightness}")
-                
+        self.audio_status.config(text="Audio: ON", fg='green')
+        self.log("Audio monitoring started")
+        
+    def audio_monitor_loop(self):
+        """Main audio monitoring loop"""
         try:
-            with sd.InputStream(callback=audio_callback, channels=1, samplerate=44100):
+            # Audio parameters
+            sample_rate = 44100
+            block_size = 1024
+            
+            def audio_callback(indata, frames, time, status):
+                if not self.audio_monitoring:
+                    return
+                    
+                try:
+                    # Get audio data from first channel
+                    audio_data = indata[:, 0] if indata.shape[1] > 1 else indata.flatten()
+                    
+                    # Calculate RMS (Root Mean Square) for volume
+                    rms = np.sqrt(np.mean(audio_data**2))
+                    
+                    # Apply sensitivity scaling
+                    sensitivity = self.audio_sensitivity.get()
+                    volume = rms * sensitivity * 1000
+                    
+                    # Clamp to valid range
+                    brightness = int(np.clip(volume, 0, 255))
+                    
+                    # Only send if above threshold to reduce noise
+                    if brightness > 15:
+                        self.send_command(f"AUDIO,{brightness}")
+                        
+                except Exception as e:
+                    self.log(f"Audio callback error: {e}")
+            
+            # Start audio stream
+            with sd.InputStream(
+                callback=audio_callback,
+                channels=1,
+                samplerate=sample_rate,
+                blocksize=block_size,
+                dtype=np.float32
+            ):
+                self.log(f"Audio stream started (SR: {sample_rate}, Block: {block_size})")
+                
                 while self.audio_monitoring:
                     time.sleep(0.1)
+                    
         except Exception as e:
             self.log(f"Audio monitoring error: {e}")
+            self.audio_status.config(text="Audio: ERROR", fg='orange')
+        finally:
+            self.audio_monitoring = False
+            self.audio_status.config(text="Audio: OFF", fg='red')
             
     def choose_color(self):
         color = colorchooser.askcolor(title="Choose LED Color")[1]
@@ -361,10 +424,12 @@ class LEDControllerGUI:
         
     def turn_off_leds(self):
         self.send_command("OFF")
+        self.stop_audio_monitoring()  # Stop audio monitoring when turning off
         self.log("LEDs turned off")
         
     def on_closing(self):
         self.stop_monitoring()
+        self.stop_audio_monitoring()  # Stop audio monitoring on close
         if self.arduino:
             self.arduino.close()
         self.root.destroy()

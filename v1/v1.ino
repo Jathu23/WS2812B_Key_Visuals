@@ -3,7 +3,7 @@
 // LED Strip Configuration
 #define LED_PIN     6
 #define NUM_LEDS    60
-#define BRIGHTNESS  100
+#define BRIGHTNESS  50
 #define LED_TYPE    WS2812B
 #define COLOR_ORDER GRB
 

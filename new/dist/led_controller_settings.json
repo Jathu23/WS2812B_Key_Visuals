@@ -1,0 +1,13 @@
+{
+  "auto_connect": false,
+  "start_minimized": false,
+  "debug_mode": false,
+  "brightness": 255,
+  "keyboard_mode": 1,
+  "keyboard_duration": 0,
+  "audio_mode": 7,
+  "idle_mode": 0,
+  "notification_mode": 1,
+  "idle_timeout": 30,
+  "audio_sensitivity": 4
+}
